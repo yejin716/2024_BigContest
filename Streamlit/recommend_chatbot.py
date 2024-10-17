@@ -11,8 +11,12 @@ import chromadb
 from langchain_chroma import Chroma
 ##################################################################embedding
 from transformers import AutoTokenizer, AutoModel
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from sentence_transformers import SentenceTransformer
+##################################################################answer
+from langchain.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_google_genai import GoogleGenerativeAI
 
 load_dotenv()
 
@@ -42,27 +46,28 @@ with st.sidebar:
     local_seogwipo_city = st.checkbox('서귀포시')  # 서귀포시 체크박스
     st.write("")
     
-    st.subheader("맛집을 골라보세요! 관광객을 위한 맛집 또는 현지인들이 사랑하는 맛집을 선택할 수 있어요.")
-    st.write("")
-    
-    # 체크박스 사용
-    local_favorites = st.checkbox('제주도민 맛집')  # 제주도민 맛집 체크박스
-    tourist_favorites = st.checkbox('관광객 맛집')  # 관광객 맛집 체크박스
-    
-    st.write('')
     # PNG 이미지 삽입
-    image = Image.open(r'D:\Yebang\study\2024빅콘테스트\생성형AI분야\Code\Streamlit\제주도 지도.png')  # 이미지 파일 경로
+    image = Image.open(r'D:\2024_bigcontest\data\이미지\제주도 지도.png')  # 이미지 파일 경로
     st.image(image, caption='제주도 지도', use_column_width=True)  # 사이드바에 이미지 삽입
 
 # Store LLM generated responses
-if "messages" not in st.session_state.keys():
-    st.session_state.messages = [{"role": "assistant", "content": "어떤 식당을 찾으시나요?"}]
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-# Display or clear chat messages
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.write(message["content"])
+# Check if the initial assistant message has been displayed
+if "message_displayed" not in st.session_state:
+    st.session_state.message_displayed = False
 
+# Display the initial assistant message only once
+if not st.session_state.message_displayed:
+    st.session_state.messages.append({"role": "assistant", "content": "어떤 식당을 찾으시나요?"})
+    st.session_state.message_displayed = True  # Mark message as displayed
+
+# Display previous messages if they exist
+# for message in st.session_state.messages:
+#     with st.chat_message(message["role"]):
+#         st.write(message["content"])
+        
 def clear_chat_history():
     st.session_state.messages = [{"role": "assistant", "content": "어떤 식당을 찾으시나요?"}]
 st.sidebar.button('Clear Chat History', on_click=clear_chat_history)
@@ -71,13 +76,19 @@ st.sidebar.button('Clear Chat History', on_click=clear_chat_history)
 #llm 함수 
 def get_llm():
     generation_config = {
-        "temperature": 1,
+        "temperature": 0,
         "top_p": 0.95,
         "top_k": 64,
         "max_output_tokens": 8192,
         "response_mime_type": "text/plain",
     }
-    llm = genai.GenerativeModel(model_name="gemini-1.5-flash", generation_config=generation_config)
+
+    # GoogleGenerativeAI 모델 초기화
+    llm = GoogleGenerativeAI(
+        model="gemini-1.5-flash",   # 모델 이름 설정
+        api_key=gemini_api_key,  # 필수 입력 필드
+        **generation_config          # 추가 설정값 전달
+    )
     return llm
 
 #########################임베딩 모델 로드##############################    
@@ -100,73 +111,109 @@ def embed_text(text):
     return embeddings.squeeze().cpu().numpy()
 
 ###########################ChromaDB#############################
-search_store = Chroma(
-    collection_name="jeju_store_mct_keyword_v4",
-    embedding_function=embedding_function,
-    persist_directory= r'D:\Yebang\study\2024빅콘테스트\생성형AI분야\VectorDB\mct_keyword_v3'
-)  
+# ChromaDB 데이터 저장 경로 설정 (이전에 저장했던 경로)
+embedding_function = HuggingFaceEmbeddings(model_name='jhgan/ko-sroberta-multitask')
+
+# ChromaDB 불러오기
+db_folder = r'D:\2024_bigcontest\VectorDB\mct_keyword_v5'
+client = chromadb.PersistentClient(path=db_folder)
+collection = client.get_collection("jeju_store_mct_keyword_5")
+
+# search_retriever = search_store.as_retriever(search_kwargs={'k' : 10})
 ###########################retreiver##########################
-def create_filter(local_jeju_city, local_seogwipo_city, local_favorites, tourist_favorites):
-    filters = {}
-
-    # 2가지가 동시에 체크된 경우 처리
-    if local_jeju_city and local_favorites: #제주시 + 현지인 맛집
-        filters["address"] = {"$contains": "제주시"}
-        filters["현지인"] = {"$contains": 1}  
-    elif local_jeju_city and tourist_favorites: #제주시 + 관광객 맛집
-        filters["address"] = {"$contains": "제주시"}
-        filters["현지인"] = {"$contains": 0}  
-    elif local_seogwipo_city and local_favorites: #서귀포시 + 현지인 맛집
-        filters["address"] = {"$contains": "서귀포시"}
-        filters["현지인"] = {"$contains": 1}  
-    elif local_seogwipo_city and tourist_favorites:
-        filters["address"] = {"$contains": "서귀포시"} #서귀포시 + 관광객 맛집
-        filters["현지인"] = {"$contains": 0}  
-
-    # 1개만 체크된 경우 처리
-    elif local_jeju_city:
-        filters["address"] = {"$contains": "제주시"}  # 제주시
-    elif local_seogwipo_city:
-        filters["address"] = {"$contains": "서귀포시"}  # 서귀포시
-    elif local_favorites:
-        filters["현지인"] = {"$contains": 1}  # 현지인 맛집
-    elif tourist_favorites:
-        filters["현지인"] = {"$contains": 0}  # 관광객 맛집
-    return filters
-
-# 필터링 조건에 따라 retriever 생성 함수
-def get_retriever(local_jeju_city, local_seogwipo_city, local_favorites, tourist_favorites):
-    filters = create_filter(local_jeju_city, local_seogwipo_city, local_favorites, tourist_favorites)
-
-    search_retriever = search_store.as_retriever(
-        search_kwargs={
-            'k': 3,
-            'filter': filters  # 필터 조건 적용
-        }
+# 음식점 검색 함수 정의
+def search_restaurants(query):
+    query_embedding = embed_text(query)  # 질문 임베딩
+    results = collection.query(
+        query_embeddings=[query_embedding],
+        n_results=5  # 반환할 결과 수
     )
-    return search_retriever
+    # '제주시' 주소가 포함된 메타데이터 필터링
+    filtered_results = []
+    if local_jeju_city:
+        for metadata in results['metadatas'][0]:
+            if '제주시' in metadata.get('address', ''):  # 'address'에 '제주시'가 포함된 데이터 
+                filtered_results.append(metadata)
+    elif local_seogwipo_city:
+        for metadata in results['metadatas'][0]:
+            if '서귀포시' in metadata.get('address', ''):  # 'address'에 '서귀포시'가 포함된 데이터 
+                filtered_results.append(metadata)
+    else:
+        for metadata in results['metadatas'][0]: # 제주시 & 서귀포시가 포함된 데이터 
+            filtered_results.append(metadata)
 
-# 사용자가 선택한 체크박스 상태로 retriever 가져오기
-search_retriever = get_retriever(local_jeju_city, local_seogwipo_city, local_favorites, tourist_favorites)
+    return filtered_results
+
 ##################################################################
-#  User-provided prompt
+# 응답을 생성하는 함수
+def generate_response(user_input):
+    # 각 문서에서 필요한 정보를 추출하여 요약문 생성
+    search_results = search_restaurants(user_input) 
+    responses = []
+    for doc in search_results:  # 상위 3개의 문서만 사용
+        context = {
+        "name": doc['name'], #가게명
+        "address": doc['address'], #주소
+        "industry": doc['industry'], #업종
+        "attraction": ', '.join(doc['attraction'][:3]), #주변 관광지
+        "summary": doc['summary'] # 요약 
+    } 
+    
+# LLM에게 주어진 문맥을 바탕으로 응답을 생성하도록 요청
+    prompt_template  = """
+    다음의 가게 정보를 바탕으로 각 가게에 대한 추천 내용을 만들어 주세요:
+    가게 정보 :
+    name: {name}
+    address: {address}
+    industry: {industry}
+    attraction: {attraction}
+    summary: {summary}
+    ---
+    다음의 질문을 바탕으로 해당되는 결과물(가게 정보) 반드시 다음 [예시]과 같이 출력이 되어야 합니다.
+    ---
+    [예시]
+    가게 : 서은이네생고기 \n
+    주소 : 제주 제주시 연동 274-30번지 1층 \n
+    업종 : 육류,고기요리 \n
+    주변 관광지 : 엠버호텔, 수목원테마파크, 롯데시티호텔 제주 \n
+    가게 특징 : (질문에 대한 요약으로 보여주기) \n
+    ---
+    
+    요약의 경우, query에 대한 요약으로 보여주세요.
+    만일, 위의 형태로 답변이 나오지 않는 결과물은 메시지를 보여주지 마세요.
+    불필요한 기호는 없애고 작성해주세요.
+    """
+
+    # 프롬프트에 데이터 채우기
+    prompt = prompt_template.format(**context)
+    
+    # LLM을 이용해 응답 생성
+    llm = get_llm()  # 사용 중인 LLM을 가져오는 함수
+    response = llm(prompt)
+    responses.append(response)
+
+    # 모든 제품에 대한 추천 문장을 결합하여 최종 응답 생성
+    final_response = response
+    return final_response
+##################################################################################################
 # 사용자 입력에 따른 검색
 if user_input := st.chat_input():
     st.session_state.messages.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
         st.write(user_input)
+        
+    # 음식점 검색 및 결과 반환
+    response = generate_response(user_input)
+        
+    # 챗봇 응답 메시지 추가
+    st.session_state.messages.append({"role": "assistant", "content": response})
 
-    # 사용자 입력을 임베딩하여 ChromaDB에서 유사 문서 검색
-    user_input_embedding = embed_text(user_input)  # 사용자 입력 임베딩
-    results = search_store.similarity_search_by_vector(user_input_embedding, k=3)  # 유사 문서 검색
+    # 챗봇 응답 출력
+    with st.chat_message("assistant"):
+        st.write(response)
 
-    # 검색 결과 처리 및 출력
-    if results:
-        with st.chat_message("assistant"):
-            for result in results:
-                st.write(f"추천 맛집: {result.metadata['name']}")
-                st.write(f"주소: {result.metadata['address']}")
-                st.write(f"요약: {result.metadata['summary']}")
-    else:
-        with st.chat_message("assistant"):
-            st.write("죄송합니다. 선택하신 조건에 맞는 맛집을 찾을 수 없습니다.")
+# 이전 메시지 출력 (세션 상태 유지)
+for message in st.session_state.messages:  
+    with st.chat_message(message["role"]):
+        st.write(message["content"])    
+    
