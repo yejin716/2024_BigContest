@@ -397,6 +397,14 @@ def extract_recommendation_keywords_from_text(question):
         '혼자 가기 좋은 조천읍 주변에 음식점 추천해줘'와 같은 query의 경우, '조천읍'은 주소를 의미하고 Keyword에 추가되어야 합니다.
         제주특별시 내 지역이 query에 포함될 경우, 그 또한 Keyword에 추가되어야 합니다.
         제주도 내 주소 또는 지명을 attraction에 포함해서는 안됩니다.
+        
+        답변할 때 이모티콘은 나오지 않게 하고, 문장이 끝나면 다음 문단으로 넘어가서 작성해줘 
+        아래의 예시에 나오는 형식을 참고해서 답변을 생성해줘
+        예시) 
+        제주시에 있는 돈향기나 제주공상 추천드려요!
+        돈향기는 돼지고기 전문점이고 제주공상은 돼지고기 맛집으로 유명해요.
+        둘 다 혼자 방문하기 좋은 분위기라고 하네요.
+        
         """
 
     # 프롬프트 생성
@@ -463,12 +471,12 @@ def recommendation_main(query, chroma_store):
     recommendation_response= recommendation_chain(query, llm, chroma_store)  # LLM을 사용하여 응답 생성
     return recommendation_response
 ###############################################기타형 함수###############################################
-def other_chain(query, llm):
+def other_chain(question, llm):
     if not metadata:
         # 프롬프트 생성
         other_prompt = \
         f"""
-        사용자 질문: {query}
+        사용자 질문: {question}
         '사용자 질문'은 '다른 질문을 해달라고 유도하는 답변'을 해야 하는 질문입니다.
         ---
         1. 제주도가 아닌 다른 지역의 음식점이나 맛집을 추천해달라는 질문이면, 제주도의 지역 내 음식점, 맛집을 알려줄 수 있다고 답변해주세요.
@@ -488,7 +496,7 @@ def other_chain(query, llm):
         예시)를 참고해서 '답변'을 생성해주세요.
         """
         # LLM에 프롬프트를 전송하고 결과 받기
-        prompt = other_prompt.format()
+        prompt = other_prompt.format(query=question)
         response = llm.generate_content(prompt)
         generated_text = response.text.strip()
         return generated_text

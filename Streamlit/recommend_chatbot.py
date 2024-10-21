@@ -71,13 +71,6 @@ st.sidebar.button('Clear Chat History', on_click=clear_chat_history)
 path = r'D:\2024_bigcontest\data\final_data\JEJU_MCT_DATA_v2(12월)_v2.csv'
 raw = pd.read_csv(path, index_col = 0)
 df = raw.copy()
-###########################llm 함수###########################    
-# def get_llm():
-#     # Create the mod
-#     llm = genai.GenerativeModel(model_name="gemini-1.5-flash",
-#                                 generation_config={"temperature": 0,
-#                                                    "max_output_tokens": 5000,},)
-#     return llm
 #########################임베딩 모델 로드##############################    
 embedding_function = HuggingFaceEmbeddings(model_name='jhgan/ko-sroberta-multitask')
 #############################ChromaDB##############################    
