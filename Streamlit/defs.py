@@ -3,6 +3,7 @@ import pandas as pd
 import torch
 import os
 import json
+import random
 from PIL import Image
 ##################################################################api
 from dotenv import load_dotenv
@@ -11,6 +12,9 @@ import google.generativeai as genai
 from langchain_chroma import Chroma
 ##################################################################embedding
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_core.chat_history import BaseChatMessageHistory
+from langchain_community.chat_message_histories import ChatMessageHistory
+from langchain_core.callbacks.base import BaseCallbackHandler
 
 ###############################[gemini-api]##################################
 load_dotenv()
@@ -30,10 +34,55 @@ recommendation_store = Chroma(
 )
 # metadata 설정
 metadata = recommendation_store.get(include=['metadatas'])
+
+###############################[닉네임 생성]##################################
+def generate_random_id():
+        # 닉네임 (id) 생성
+        jeju_nicknames = [
+            "한라산바람", "오름여행자", "바다향기", "감귤연인", "돌하르방친구", "푸른섬나그네", 
+            "섭지코지연인", "해녀이야기", "제주바다빛", "감성제주러", "한치도사", "제주하늘", 
+            "돌담길여행자", "조랑말의꿈", "바람의섬", "우도탐험가", "평화의바다", "제주푸름", 
+            "오름의숨결", "비양도의꿈", "올레길여행자", "새별오름러버", "제주향기", "애월바다러버", 
+            "성산일출연인", "한라봉나그네", "비자림의추억", "해안도로러버", "구좌바다바람", "용눈이오름"
+        ]
+        return random.choice(jeju_nicknames)
+def making_id():
+            created_id = generate_random_id()
+            st.session_state['session_id'] = created_id
+            
+###############################[초기화]##################################
+def reset_session_state():
+        st.session_state['messages'] = []
+        st.session_state['session_id'] = None  # ID 초기화
+        st.session_state['is_logged_in'] = False
+        st.session_state['image_uploaded'] = False
 ###############################[채팅내용 reset]##################################
 def clear_chat_history():
     st.session_state.messages = [{"role": "assistant", "content": "어떤 식당을 찾으시나요?"}]
-    
+
+###############################[history]##################################    
+def get_session_history(session_id: str) -> BaseChatMessageHistory:
+    if session_id not in st.session_state['store']:  # 세션 ID가 store에 없는 경우
+        # 새로운 ChatMessageHistory 객체를 생성하여 store에 저장
+        st.session_state['store'][session_id] = ChatMessageHistory()
+    return st.session_state['store'][session_id]  # 해당 세션 ID에 대한 세션 기록 반환
+ 
+###############################[llm 함수]##################################
+class StreamHandler(BaseCallbackHandler):
+    def __init__(self, container, initial_text=""):
+        self.container = container
+        self.text = initial_text
+        
+    def on_llm_new_token(self, token: str, **kwargs) -> None:
+        self.text += token
+        self.container.markdown(self.text)   
+        
+def print_messages():    
+    # 새로고침하기 전에 'messages'에 있는 내용 보여주기
+    if 'messages' in st.session_state and len(st.session_state['messages']) > 0:
+        # 'user'가 입력한 내용은 'user' 아이콘과 함께 나가야 하고, 'assistant'가 작성한 내용은 'assistant' 아이콘과 함께 나가야 한다.
+        for chat_message in st.session_state['messages']:
+            st.chat_message(chat_message['role']).write(chat_message['content'])    
 ###############################[llm 함수]##################################
 def get_llm():
     # Create the mod
@@ -65,7 +114,7 @@ def search_restaurants(query, local_jeju_city=False, local_seogwipo_city=False):
     return filtered_results
 
 #################################### 카테고리 분류 #####################################################
-def category_classification(query):
+def category_classification(query, session_id):
     
     classification_system_prompt = \
     """
@@ -213,7 +262,7 @@ def extract_keywords_from_text(query):
 # 조건으로 정답 찾기
 def sorted_df(query, df):
   
-  json_data = extract_keywords_from_text(query)
+  json_data = extract_keywords_from_text(query) # keywords_json
 
   # 주소로 필터링
   if '주소' in json_data:
@@ -279,9 +328,9 @@ def search_chain(store, llm):
 
 # search_main
 def search_main(query, df):
-  store = sorted_df(query, df)
+  store = sorted_df(query, df) #store
   llm = get_llm()
-  search_response = search_chain(store, llm)
+  search_response = search_chain(store, llm) #generated_text
   return search_response
 
 ############################################ 추천형 검색#########################################
