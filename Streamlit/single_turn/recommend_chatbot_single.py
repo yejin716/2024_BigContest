@@ -92,7 +92,7 @@ if user_input := st.chat_input('사용자 특성이나 여행 동반자, 위치�
         
     with st.spinner("음식점을 찾는 중입니다..."):    
         # 음식점 검색 및 결과 반환
-        response = main(user_input, df)
+        response = main(user_input, local_jeju_city, local_seogwipo_city, df)
         
         # 사용자가 제주시를 선택하고 서귀포시 음식점을 요청한 경우
         if (local_jeju_city) and (not local_seogwipo_city) and ('서귀포' in user_input):
@@ -108,7 +108,7 @@ if user_input := st.chat_input('사용자 특성이나 여행 동반자, 위치�
         
         # 검색 결과가 없을 때
         else:
-            assistant_response = main(user_input, df)
+            assistant_response = main(user_input, local_jeju_city, local_seogwipo_city, df)
 
     # 챗봇 응답 메시지 추가
     st.session_state.messages.append({"role": "assistant", "content": assistant_response})

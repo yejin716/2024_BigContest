@@ -11,7 +11,6 @@ import google.generativeai as genai
 from langchain_chroma import Chroma
 ##################################################################embedding
 from langchain_huggingface import HuggingFaceEmbeddings
-
 ###############################[gemini-api]##################################
 load_dotenv()
 
@@ -43,7 +42,7 @@ def get_llm():
     return llm   
 
 ###############################[체크표시 필터링]##################################
-def search_restaurants(query, local_jeju_city=False, local_seogwipo_city=False):
+def search_restaurants(query, local_jeju_city, local_seogwipo_city):
     filtered_results = []
     
     # 'metadata' 변수는 함수 외부에서 가져옵니다
@@ -63,7 +62,20 @@ def search_restaurants(query, local_jeju_city=False, local_seogwipo_city=False):
                 filtered_results.append(meta)
 
     return filtered_results
-
+    # for meta in metadata['metadatas']:  # 'metadatas' 리스트 순회
+    #     if isinstance(meta, dict):
+    #         address = meta.get('address', '')
+            
+    #         # 제주시 체크 시 제주시 관련 데이터만 추가
+    #         if local_jeju_city and '제주시' in address:
+    #             filtered_results.append(meta)
+    #         # 서귀포시 체크 시 서귀포시 관련 데이터만 추가
+    #         elif local_seogwipo_city and '서귀포시' in address:
+    #             filtered_results.append(meta)
+    #         # 둘 다 체크하지 않았을 때는 모든 데이터를 추가
+    #         elif not local_jeju_city and not local_seogwipo_city:
+    #             filtered_results.append(meta)
+    # return filtered_results
 #################################### 카테고리 분류 #####################################################
 def category_classification(query):
     
@@ -425,9 +437,9 @@ def extract_recommendation_keywords_from_text(question):
     recommendation_keywords_json_data = json.loads(keywords_text)
     return recommendation_keywords_json_data
 
-def filter_chroma_db(query, chroma_store):
+def filter_chroma_db(query, local_jeju_city, local_seogwipo_city, chroma_store):
     
-    filtered_result = search_restaurants(query)
+    filtered_result = search_restaurants(query, local_jeju_city, local_seogwipo_city)
     # 질의를 통해 JSON 데이터 추출
     extracted_data = extract_recommendation_keywords_from_text(query)
     
@@ -446,9 +458,9 @@ def filter_chroma_db(query, chroma_store):
     return recommendation_filtered_items[:5]
 
 # LLM을 이용한 최종 응답 생성
-def recommendation_chain(query, llm, recommendation_store):
+def recommendation_chain(query, local_jeju_city, local_seogwipo_city, llm, recommendation_store):
     # 데이터베이스에서 관련 정보 검색
-    db_results = filter_chroma_db(query, recommendation_store)
+    db_results = filter_chroma_db(query, local_jeju_city, local_seogwipo_city, recommendation_store)
 
     # 검색된 데이터를 LLM 프롬프트에 추가
     db_info = json.dumps(db_results, ensure_ascii=False, indent=2)
@@ -490,9 +502,9 @@ def recommendation_chain(query, llm, recommendation_store):
     return generated_text
 
 # 메인 함수
-def recommendation_main(query, chroma_store):
+def recommendation_main(query, local_jeju_city, local_seogwipo_city, chroma_store):
     llm = get_llm()  # LLM 초기화
-    recommendation_response= recommendation_chain(query, llm, chroma_store)  # LLM을 사용하여 응답 생성
+    recommendation_response= recommendation_chain(query, local_jeju_city, local_seogwipo_city, llm, chroma_store)  # LLM을 사용하여 응답 생성
     return recommendation_response
 ###############################################기타형 함수###############################################
 def other_chain(question, llm):
@@ -553,7 +565,7 @@ def other_main(query):
     other_response = other_chain(query, llm)
     return other_response
 ##############################################메인 함수##############################################
-def main(query, df):
+def main(query, local_jeju_city, local_seogwipo_city, df):
     classification = category_classification(query)
     if classification['Classification'] == '검색형':
         print('분류 >> 검색형')
@@ -561,7 +573,7 @@ def main(query, df):
 
     elif classification['Classification'] == '추천형':
         print('분류 >> 추천형')
-        return recommendation_main(query, recommendation_store)
+        return recommendation_main(query, local_jeju_city, local_seogwipo_city, recommendation_store)
 
     else:
         print('분류 >> 기타')
