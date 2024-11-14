@@ -11,7 +11,8 @@ import google.generativeai as genai
 from langchain_chroma import Chroma
 ##################################################################embedding
 from langchain_huggingface import HuggingFaceEmbeddings
-from defs_single import (clear_chat_history, main)
+# from defs_single import (clear_chat_history, main)
+from defs_single_v2 import (clear_chat_history, main)
 
 #.env 파일 생성해서 GEMINI_API_KEY=API_KEY 입력 후 실행하시면돼요
 load_dotenv()

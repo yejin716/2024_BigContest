@@ -12,6 +12,7 @@ from langchain_chroma import Chroma
 ##################################################################embedding
 from langchain_huggingface import HuggingFaceEmbeddings
 ###############################[gemini-api]##################################
+from fuzzywuzzy import process
 load_dotenv()
 
 gemini_api_key = os.getenv('GEMINI_API_KEY')
@@ -50,11 +51,11 @@ def search_restaurants(query, local_jeju_city, local_seogwipo_city):
     
     if local_jeju_city:
         for meta in metadata['metadatas']:  # 'metadatas' 리스트 순회
-            if isinstance(meta, dict) and '제주시' in meta.get('address', ''):  # 'address'가 포함된 데이터만 처리
+            if isinstance(meta, dict) and '제주시' in meta.get('address', ''):      # 'address'가 포함된 데이터만 처리
                 filtered_results.append(meta)
     elif local_seogwipo_city:
         for meta in metadata['metadatas']:
-            if isinstance(meta, dict) and '서귀포시' in meta.get('address', ''):  # 'address'가 포함된 데이터만 처리
+            if isinstance(meta, dict) and '서귀포시' in meta.get('address', ''):     # 'address'가 포함된 데이터만 처리
                 filtered_results.append(meta)
     else:
         for meta in metadata['metadatas']:
@@ -62,6 +63,7 @@ def search_restaurants(query, local_jeju_city, local_seogwipo_city):
                 filtered_results.append(meta)
 
     return filtered_results
+
     # for meta in metadata['metadatas']:  # 'metadatas' 리스트 순회
     #     if isinstance(meta, dict):
     #         address = meta.get('address', '')
@@ -111,6 +113,7 @@ def category_classification(query):
     예: '가족과 함께 갈 만한 횟집 추천해줘.'
 
     검색형 질문일 경우에는 반드시 특정한 데이터 지표('이용건수', '비중', '구간')와 연관된 질문이어야 하며, 그렇지 않으면 추천형으로 분류하세요.
+    특정 가게를 명시한 질문일 경우 추천형으로 분류하세요.
 
     --
     [카테고리 가이드 라인]
@@ -264,10 +267,6 @@ def search_chain(store, llm):
     # store에서 질문과 답변을 합쳐 하나의 문자열로 변환
     query_string = store['question'] + ' ' + store['answer']
 
-    # 이 문자열을 search_retriever에 전달
-    # documents = search_retriever.invoke(query_string)
-    # documents = documents[0]
-
     # 프롬프트 생성
     chat_template = f"""
     You are an expert assistant. Based on the following question and answer, generate a suitable response using the document provided.
@@ -377,13 +376,25 @@ def extract_recommendation_keywords_from_text(question):
         예시:
         '비스트로낭이 현지인 맛집이야?'와 같이 특정 가게정보 질문이면,
         Classification에 "특정가게정보"가 입력되고, Keyword에 "비스트로낭", "현지인", "맛집" 키워드가 입력되도록 해주세요.
-        추가로 형식에 맞게 추가해주세요. 해당
+        추가로 형식에 맞게 추가해주세요.
         {{
             "Classification": "특정가게정보",
             "Question": "비스트로낭이 현지인 맛집이야?",
             "name": 가게명,
             "local": 1,
             "Keyword": ["비스트로낭", "현지인", "맛집"]
+        }}
+        '호미에는 뭘 팔아?', '호미에 뭘 팔아', '호미에 무엇을 팔아','호미는 뭘 팔아'와 같은 질문이 들어오면 특정 가게의 메뉴에 대한 질문입니다.
+        위 질문들이 들어오면 '호미라는 가게에는 무슨 메뉴가 있어'라고 질문으로 이해하세요.
+        그렇기 때문에, '~에는', '~에', '~는"의 앞에 오는 단어는 가게 명(name)에 해당합니다.
+        Classification에 "특정가게정보"가 입력되고, Keyword에 "호미", "메뉴" 키워드가 입력되도록 해주세요.
+        위 질문과 유사한 질문 형태로는 이런 것들이 있습니다.
+        추가로 형식에 맞게 추가해주세요.
+        {{
+            "Classification": "특정가게정보",
+            "Question": "호미에는 뭘 팔아",
+            "name": 가게명,
+            "Keyword": ["호미", "메뉴"]
         }}
         '가족과 함께가기 좋은 해장국 집 추천해줘'과 같이 특정 정보에 해당하는 음식점 추천을 위한 질문이면,
         Classification에 "음식점추천"가 입력되고, Keyword에 "가족", "해장국", "추천" 키워드가 입력되도록 해주세요.
@@ -403,18 +414,6 @@ def extract_recommendation_keywords_from_text(question):
             "Question": "연인과 함께 가기 좋은 제주시 애월읍 음식점 추천해줘",
             "Keyword": ["연인", "제주시 애월읍", "추천"]
             }}
-            
-        '특정 가게명을 언급'하면서 정보(어떤 음식을 파는지, 위치는 어디인지, 누구와 가기 좋은지, 자주 방문하는 연령대와 성별)에 대한 질문이면, 
-        예시) '호미에는 어떤 음식을 팔아?'
-        Classification에 "음식점추천"가 입력되고, Keyword에 "호미", "어떤 음식", "팔아" 키워드가 입력되도록 해주세요.
-        주의할점) **에는, **라는, **는, **은 처럼 뒤에 조사는 무시하고 가게명의 명사를 추출해줘 
-
-        {{
-            "Classification": "음식점추천",
-            "Question": "호미에는 어떤 음식을 팔아?",
-            "Keyword": ["호미", "어떤 음식", "팔아"]
-            }}
-        
         ---
         [가이드라인]
         'attraction'과 주소를 정확히 구분해야 합니다.
@@ -437,6 +436,26 @@ def extract_recommendation_keywords_from_text(question):
     recommendation_keywords_json_data = json.loads(keywords_text)
     return recommendation_keywords_json_data
 
+# def filter_chroma_db(query, local_jeju_city, local_seogwipo_city, chroma_store):
+    
+#     filtered_result = search_restaurants(query, local_jeju_city, local_seogwipo_city)
+#     # 질의를 통해 JSON 데이터 추출
+#     extracted_data = extract_recommendation_keywords_from_text(query)
+    
+#     # 필터링 조건 설정
+#     filters = {key: extracted_data[key] for key in ["name", "industry", "attraction", "local"] if key in extracted_data}
+
+#     if filters:
+#         # 필터링 실행
+#         recommendation_filtered_items = [item for item in filtered_result if all(item.get(key) == value for key, value in filters.items())]
+#     else:
+#         # 필터링 조건이 없을 경우 유사한 5개의 항목을 검색
+#         search_results = chroma_store.similarity_search(query, k=5)
+#         # 검색 결과에서 메타데이터 추출
+#         recommendation_filtered_items = [result.metadata for result in search_results]
+
+#     return recommendation_filtered_items[:5]
+
 def filter_chroma_db(query, local_jeju_city, local_seogwipo_city, chroma_store):
     
     filtered_result = search_restaurants(query, local_jeju_city, local_seogwipo_city)
@@ -446,16 +465,28 @@ def filter_chroma_db(query, local_jeju_city, local_seogwipo_city, chroma_store):
     # 필터링 조건 설정
     filters = {key: extracted_data[key] for key in ["name", "industry", "attraction", "local"] if key in extracted_data}
 
+    # 필터링 조건이 있는 경우
     if filters:
         # 필터링 실행
-        recommendation_filtered_items = [item for item in filtered_result if all(item.get(key) == value for key, value in filters.items())]
+        filtered_items = [item for item in filtered_result if all(item.get(key) == value for key, value in filters.items())]
+        
+        # 메타데이터가 추출되지 않는 경우
+        if not filtered_items and 'name' in extracted_data:
+            query_name = extracted_data['name']
+            all_names = [item['name'] for item in filtered_result]  # 'metadatas' 제거
+            
+            # 이름에서 가장 유사한 항목 5개 찾기
+            similar_items = process.extract(query_name, all_names, limit=5)
+
+            # 유사한 항목의 메타데이터 추출
+            filtered_items = [item for item in filtered_result if item['name'] in [x[0] for x in similar_items]]
+
     else:
         # 필터링 조건이 없을 경우 유사한 5개의 항목을 검색
         search_results = chroma_store.similarity_search(query, k=5)
-        # 검색 결과에서 메타데이터 추출
-        recommendation_filtered_items = [result.metadata for result in search_results]
+        filtered_items = [result.metadata for result in search_results]
 
-    return recommendation_filtered_items[:5]
+    return filtered_items
 
 # LLM을 이용한 최종 응답 생성
 def recommendation_chain(query, local_jeju_city, local_seogwipo_city, llm, recommendation_store):
@@ -474,19 +505,23 @@ def recommendation_chain(query, local_jeju_city, local_seogwipo_city, llm, recom
     {db_info}
 
     이 정보를 바탕으로 사용자에게 응답을 만들어 주세요.
+    
+    규칙:
+    - '딱히 유명한 음식점은 없네요' 이런 말은 하지 마세요.
+    - 이모티콘을 추가하지 마세요.
+    - 질문의 의도를 파악하고, 질문에 적절한 대답을 db_info에서 추출하여 응답을 만들어주세요.
+    - 키워드를 나열하지 말고, 그 키워드를 이용해 문장을 만들어주세요.
+    - 모든 키워드는 감성 분석 결과 긍정 키워드입니다.
+    - 데이터베이스에 대한 언급은 하지 마세요.
+      단, 데이터베이스에 정보가 없을 시에는 질문에 대한 정보를 가지고 있지 않다고 말해주세요.
+      추가로 다른 관광지를 제시하며, 다른 관광지에 대한 질문을 유도해 주세요.
+    - 최대 4개의 관광지만을 알려주세요.
 
-    답변할 때 이모티콘은 나오지 않게 하고, 문장이 끝나면 다음 문단으로 넘어가서 작성하고 각 가게의 설명이 끝나면 다음줄에 다음 가게의 설명을 작성해줘 
-    아래의 예시에 나오는 형식을 참고해서 답변을 생성해줘
-        
-    예시 형식:
-    
-    **음식점명**: 설명, 주요 메뉴
-    
     예시)
     {query} : '공항 근처 24시간 음식점 추천해줘'
-    
+
     공항 근처 24시간 음식점을 추천드릴께요.
-    
+
     1. 명품대게제주횟집 : 이곳은 대게 전문점으로 세트 메뉴와 매운탕, 회 메뉴가 다양합니다. \n
     2. 먹보횟집 : 신선한 한치회와 매운탕을 맛볼 수 있어요. 특히, 신선한 해산물이 일품이죠. \n
     3. 쉐프의스시이야기 : 초밥과 연어 전문점이고 정성스런 스시를 즐기실 수 있습니다. \n
@@ -494,6 +529,7 @@ def recommendation_chain(query, local_jeju_city, local_seogwipo_city, llm, recom
 
     이 형식을 따라 질문에 맞는 음식점을 깔끔하게 정리하여 답변해 주세요.
     """
+    
 
     # LLM에 프롬프트를 전송하고 결과 받기
     response = llm.generate_content(recommendation_chat_template)
@@ -542,15 +578,7 @@ def other_chain(question, llm):
          예를 들어, '가족과 함께 가기 좋은 음식점 추천'이나 '해산물이 맛있는 제주도 음식점'과 같은 질문을 입력해 주시면 도움이 될 것 같습니다.'
 
     ---
-    4. **답변 형식**:
-       - 이모티콘은 사용하지 않고, 문장이 끝나면 다음 문단으로 넘어가도록 작성하여 가독성을 높여주세요.
-       - 아래 형식을 참고해 답변을 구성해주세요:
 
-       예시)
-       제주시에 있는 돈향기나 제주공상을 추천드려요.
-       돈향기는 돼지고기 전문점이고, 제주공상은 돼지고기 맛집으로 유명합니다.
-       둘 다 혼자 방문하기 좋은 분위기로 알려져 있어요.
-       
 
     """
     # LLM에 프롬프트를 전송하고 결과 받기
