@@ -12,7 +12,7 @@ from langchain_chroma import Chroma
 ##################################################################embedding
 from langchain_huggingface import HuggingFaceEmbeddings
 # from defs_single import (clear_chat_history, main)
-from defs_single_v2 import (clear_chat_history, main)
+from defs_single_v2 import (clear_chat_history, category_classification, search_main, recommendation_main, other_main)
 
 #.env 파일 생성해서 GEMINI_API_KEY=API_KEY 입력 후 실행하시면돼요
 load_dotenv()
@@ -78,42 +78,70 @@ embedding_function = HuggingFaceEmbeddings(model_name='jhgan/ko-sroberta-multita
 # ChromaDB 불러오기
 # 해당 데이터 경로로 변경 하세요!!
 recommendation_store = Chroma(
-    collection_name='jeju_store_mct_keyword_6',
+    collection_name='jeju_store_mct_keyword_8',
     embedding_function=embedding_function,
-    persist_directory= r'D:\2024_bigcontest\VectorDB\mct_keyword_v6'
+    persist_directory= r'D:\2024_bigcontest\VectorDB\mct_keyword_v8'
 )
 # metadata 설정
 metadata = recommendation_store.get(include=['metadatas'])
 ###########################################사용자 입력 쿼리################################################
 # 사용자 입력에 따른 검색
 if user_input := st.chat_input('사용자 특성이나 여행 동반자, 위치와 같은 조건을 입력해보세요.'):
+    # 사용자 입력 메시지 저장 및 출력
     st.session_state.messages.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
         st.write(user_input)
-        
+
+    # 음식점 찾기 스피너
     with st.spinner("음식점을 찾는 중입니다..."):    
-        # 음식점 검색 및 결과 반환
-        response = main(user_input, local_jeju_city, local_seogwipo_city, df)
+        # 입력 분류
+        classification = category_classification(user_input)
         
-        # 사용자가 제주시를 선택하고 서귀포시 음식점을 요청한 경우
-        if (local_jeju_city) and (not local_seogwipo_city) and ('서귀포' in user_input):
-            assistant_response = "제주시에 있는 음식점만 추천해드릴 수 있어요. 서귀포시에 있는 음식점을 추천받고 싶다면 서귀포시에 체크해주세요."
+        # 검색형 분류
+        if classification['Classification'] == '검색형':
+            print('분류 >> 검색형')
+            response = search_main(user_input, df)
         
-        # 사용자가 서귀포시를 선택하고 제주시에 있는 음식점을 요청한 경우
-        elif (local_seogwipo_city) and (not local_jeju_city) and ('제주' in user_input):
-            assistant_response = "서귀포시에 있는 음식점만 추천해드릴 수 있어요. 제주시에 있는 음식점을 추천받고 싶다면 제주시에 체크해주세요."
-
-        # 검색 결과가 있는 경우
-        elif response:
-            assistant_response = response  # 검색 결과를 assistant_response로 저장
+        # 추천형 분류
+        elif classification['Classification'] == '추천형':
+            print('분류 >> 추천형')
+            
+            # 제주시와 서귀포시 선택 조건에 따른 안내 메시지 처리
+            if local_jeju_city and not local_seogwipo_city and '서귀포' in user_input:
+                response = "제주시에 있는 음식점만 추천해드릴 수 있어요. 서귀포시에 있는 음식점을 추천받고 싶다면 서귀포시에 체크해주세요."
+            elif local_seogwipo_city and not local_jeju_city and '제주' in user_input:
+                response = "서귀포시에 있는 음식점만 추천해드릴 수 있어요. 제주시에 있는 음식점을 추천받고 싶다면 제주시에 체크해주세요."
+            else:
+                response = recommendation_main(user_input, local_jeju_city, local_seogwipo_city, recommendation_store)
         
-        # 검색 결과가 없을 때
+        # 기타 분류
         else:
-            assistant_response = main(user_input, local_jeju_city, local_seogwipo_city, df)
-
-    # 챗봇 응답 메시지 추가
+            print('분류 >> 기타')
+            response = other_main(user_input)
+        
+        # 챗봇 응답 메시지 설정
+        assistant_response = response
+    
+    # 챗봇 응답 메시지 저장 및 출력
     st.session_state.messages.append({"role": "assistant", "content": assistant_response})
-
-    # 챗봇 응답 출력
     with st.chat_message("assistant"):
         st.write(assistant_response)
+        
+            # response = main(user_input, local_jeju_city, local_seogwipo_city, df)
+            # # 사용자가 제주시를 선택하고 서귀포시 음식점을 요청한 경우
+            # if (local_jeju_city) and (not local_seogwipo_city) and ('서귀포' in user_input):
+            #     assistant_response = "제주시에 있는 음식점만 추천해드릴 수 있어요. 서귀포시에 있는 음식점을 추천받고 싶다면 서귀포시에 체크해주세요."
+            
+            # # 사용자가 서귀포시를 선택하고 제주시에 있는 음식점을 요청한 경우
+            # elif (local_seogwipo_city) and (not local_jeju_city) and ('제주' in user_input):
+            #     assistant_response = "서귀포시에 있는 음식점만 추천해드릴 수 있어요. 제주시에 있는 음식점을 추천받고 싶다면 제주시에 체크해주세요."
+
+            # # 검색 결과가 있는 경우
+            # elif response:
+            #     assistant_response = response  # 검색 결과를 assistant_response로 저장
+            
+            # # 검색 결과가 없을 때
+            # else:
+            #     assistant_response = main(user_input, local_jeju_city, local_seogwipo_city, df)
+            
+   
