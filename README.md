@@ -43,3 +43,9 @@ EDA에서 도출된 인사이트를 바탕으로 구성원 유형, 현지인 맛
 ![image](https://github.com/user-attachments/assets/34a36f07-977e-46f7-a815-1f05b4a9ab6b)
 
 ### 실행 결과 
+- [메인 화면]
+![image](https://github.com/user-attachments/assets/686f32c4-fe80-4acf-a8e1-36c2722da7d9)
+
+- 지역 선택 후 검색, 해당 카페 정보 확인
+![image](https://github.com/user-attachments/assets/a6c43b6d-9b8f-40f4-94f7-377015364603)
+
